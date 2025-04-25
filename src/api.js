@@ -1,15 +1,15 @@
-import isEqual from 'fast-deep-equal';
+import isEqual from 'lodash.isequal';
 import normalize from '@mapbox/geojson-normalize';
-import {generateID} from './lib/id.js';
-import featuresAt from './lib/features_at.js';
-import stringSetsAreEqual from './lib/string_sets_are_equal.js';
-import * as Constants from './constants.js';
-import StringSet from './lib/string_set.js';
+import hat from 'hat';
+import featuresAt from './lib/features_at';
+import stringSetsAreEqual from './lib/string_sets_are_equal';
+import * as Constants from './constants';
+import StringSet from './lib/string_set';
 
-import Polygon from './feature_types/polygon.js';
-import LineString from './feature_types/line_string.js';
-import Point from './feature_types/point.js';
-import MultiFeature from './feature_types/multi_feature.js';
+import Polygon from './feature_types/polygon';
+import LineString from './feature_types/line_string';
+import Point from './feature_types/point';
+import MultiFeature from './feature_types/multi_feature';
 
 const featureTypes = {
   Polygon,
@@ -21,28 +21,26 @@ const featureTypes = {
 };
 
 export default function(ctx, api) {
-  api.modes = Constants.modes;
 
-  // API doesn't emit events by default
-  const silent = ctx.options.suppressAPIEvents !== undefined ? !!ctx.options.suppressAPIEvents : true;
+  api.modes = Constants.modes;
 
   api.getFeatureIdsAt = function(point) {
     const features = featuresAt.click({ point }, null, ctx);
     return features.map(feature => feature.properties.id);
   };
 
-  api.getSelectedIds = function() {
+  api.getSelectedIds = function () {
     return ctx.store.getSelectedIds();
   };
 
-  api.getSelected = function() {
+  api.getSelected = function () {
     return {
       type: Constants.geojsonTypes.FEATURE_COLLECTION,
       features: ctx.store.getSelectedIds().map(id => ctx.store.get(id)).map(feature => feature.toGeoJSON())
     };
   };
 
-  api.getSelectedPoints = function() {
+  api.getSelectedPoints = function () {
     return {
       type: Constants.geojsonTypes.FEATURE_COLLECTION,
       features: ctx.store.getSelectedCoordinates().map(coordinate => ({
@@ -74,11 +72,11 @@ export default function(ctx, api) {
     return newIds;
   };
 
-  api.add = function(geojson) {
+  api.add = function (geojson) {
     const featureCollection = JSON.parse(JSON.stringify(normalize(geojson)));
 
     const ids = featureCollection.features.map((feature) => {
-      feature.id = feature.id || generateID();
+      feature.id = feature.id || hat();
 
       if (feature.geometry === null) {
         throw new Error('Invalid geometry: null');
@@ -91,14 +89,13 @@ export default function(ctx, api) {
           throw new Error(`Invalid geometry type: ${feature.geometry.type}.`);
         }
         const internalFeature = new Model(ctx, feature);
-        ctx.store.add(internalFeature, { silent });
+        ctx.store.add(internalFeature);
       } else {
         // If a feature of that id has already been created, and we are swapping it out ...
         const internalFeature = ctx.store.get(feature.id);
-        const originalProperties = internalFeature.properties;
         internalFeature.properties = feature.properties;
-        if (!isEqual(originalProperties, feature.properties)) {
-          ctx.store.featureChanged(internalFeature.id, { silent });
+        if (!isEqual(internalFeature.properties, feature.properties)) {
+          ctx.store.featureChanged(internalFeature.id);
         }
         if (!isEqual(internalFeature.getCoordinates(), feature.geometry.coordinates)) {
           internalFeature.incomingCoords(feature.geometry.coordinates);
@@ -112,7 +109,7 @@ export default function(ctx, api) {
   };
 
 
-  api.get = function(id) {
+  api.get = function (id) {
     const feature = ctx.store.get(id);
     if (feature) {
       return feature.toGeoJSON();
@@ -127,11 +124,11 @@ export default function(ctx, api) {
   };
 
   api.delete = function(featureIds) {
-    ctx.store.delete(featureIds, { silent });
+    ctx.store.delete(featureIds, { silent: true });
     // If we were in direct select mode and our selected feature no longer exists
     // (because it was deleted), we need to get out of that mode.
     if (api.getMode() === Constants.modes.DIRECT_SELECT && !ctx.store.getSelectedIds().length) {
-      ctx.events.changeMode(Constants.modes.SIMPLE_SELECT, undefined, { silent });
+      ctx.events.changeMode(Constants.modes.SIMPLE_SELECT, undefined, { silent: true });
     } else {
       ctx.store.render();
     }
@@ -140,11 +137,11 @@ export default function(ctx, api) {
   };
 
   api.deleteAll = function() {
-    ctx.store.delete(ctx.store.getAllIds(), { silent });
+    ctx.store.delete(ctx.store.getAllIds(), { silent: true });
     // If we were in direct select mode, now our selected feature no longer exists,
     // so escape that mode.
     if (api.getMode() === Constants.modes.DIRECT_SELECT) {
-      ctx.events.changeMode(Constants.modes.SIMPLE_SELECT, undefined, { silent });
+      ctx.events.changeMode(Constants.modes.SIMPLE_SELECT, undefined, { silent: true });
     } else {
       ctx.store.render();
     }
@@ -158,7 +155,7 @@ export default function(ctx, api) {
       if (stringSetsAreEqual((modeOptions.featureIds || []), ctx.store.getSelectedIds())) return api;
       // And if we are changing the selection within simple_select mode, just change the selection,
       // instead of stopping and re-starting the mode
-      ctx.store.setSelected(modeOptions.featureIds, { silent });
+      ctx.store.setSelected(modeOptions.featureIds, { silent: true });
       ctx.store.render();
       return api;
     }
@@ -168,7 +165,7 @@ export default function(ctx, api) {
       return api;
     }
 
-    ctx.events.changeMode(mode, modeOptions, { silent });
+    ctx.events.changeMode(mode, modeOptions, { silent: true });
     return api;
   };
 
@@ -177,22 +174,22 @@ export default function(ctx, api) {
   };
 
   api.trash = function() {
-    ctx.events.trash({ silent });
+    ctx.events.trash({ silent: true });
     return api;
   };
 
   api.combineFeatures = function() {
-    ctx.events.combineFeatures({ silent });
+    ctx.events.combineFeatures({ silent: true });
     return api;
   };
 
   api.uncombineFeatures = function() {
-    ctx.events.uncombineFeatures({ silent });
+    ctx.events.uncombineFeatures({ silent: true });
     return api;
   };
 
   api.setFeatureProperty = function(featureId, property, value) {
-    ctx.store.setFeatureProperty(featureId, property, value, { silent });
+    ctx.store.setFeatureProperty(featureId, property, value);
     return api;
   };
 

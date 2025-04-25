@@ -1,11 +1,11 @@
-import {generateID} from '../lib/id.js';
-import * as Constants from '../constants.js';
+import hat from 'hat';
+import * as Constants from '../constants';
 
 const Feature = function(ctx, geojson) {
   this.ctx = ctx;
   this.properties = geojson.properties || {};
   this.coordinates = geojson.geometry.coordinates;
-  this.id = geojson.id || generateID();
+  this.id = geojson.id || hat();
   this.type = geojson.geometry.type;
 };
 
@@ -58,6 +58,7 @@ Feature.prototype.internal = function(mode) {
   }
 
   return {
+    id: this.id,
     type: Constants.geojsonTypes.FEATURE,
     properties,
     geometry: {

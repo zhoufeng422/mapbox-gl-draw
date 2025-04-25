@@ -1,20 +1,12 @@
-import {generateID} from '../../src/lib/id.js';
-import getGeoJSON from './get_geojson.js';
+import xtend from 'xtend';
+import getGeoJSON from './get_geojson';
+import hat from 'hat';
 
-const usedIds = new Set();
-
-export function generateUniqueID() {
-  let id = generateID();
-  while (usedIds.has(id)) {
-    id = generateID();
-  }
-  usedIds.add(id);
-  return id;
-}
+const hatRack = hat.rack();
 
 export default function createFeature(featureType) {
-  const feature = Object.assign({
-    id: generateUniqueID(),
+  const feature = xtend({
+    id: hatRack(),
     properties: {}
   }, getGeoJSON(featureType));
   feature.toGeoJSON = () => feature;

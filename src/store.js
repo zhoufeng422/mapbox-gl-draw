@@ -1,7 +1,7 @@
-import toDenseArray from './lib/to_dense_array.js';
-import StringSet from './lib/string_set.js';
-import render from './render.js';
-import * as Constants from './constants.js';
+import toDenseArray from './lib/to_dense_array';
+import StringSet from './lib/string_set';
+import render from './render';
+import {interactions} from './constants';
 
 export default function Store(ctx) {
   this._features = {};
@@ -9,6 +9,7 @@ export default function Store(ctx) {
   this._selectedFeatureIds = new StringSet();
   this._selectedCoordinates = [];
   this._changedFeatureIds = new StringSet();
+  this._deletedFeaturesToEmit = [];
   this._emitSelectionChange = false;
   this._mapInitialConfig = {};
   this.ctx = ctx;
@@ -24,32 +25,12 @@ export default function Store(ctx) {
       renderRequest = requestAnimationFrame(() => {
         renderRequest = null;
         render.call(this);
-
-        // Fire deduplicated selection change event
-        if (this._emitSelectionChange) {
-          this.ctx.events.fire(Constants.events.SELECTION_CHANGE, {
-            features: this.getSelected().map(feature => feature.toGeoJSON()),
-            points: this.getSelectedCoordinates().map(coordinate => ({
-              type: Constants.geojsonTypes.FEATURE,
-              properties: {},
-              geometry: {
-                type: Constants.geojsonTypes.POINT,
-                coordinates: coordinate.coordinates
-              }
-            }))
-          });
-
-          this._emitSelectionChange = false;
-        }
-
-        // Fire render event
-        this.ctx.events.fire(Constants.events.RENDER, {});
       });
     }
   };
-
   this.isDirty = false;
 }
+
 
 /**
  * Delays all rendering until the returned function is invoked
@@ -84,36 +65,8 @@ Store.prototype.setDirty = function() {
  * @param {string} featureId
  * @return {Store} this
  */
-Store.prototype.featureCreated = function(featureId, options = {}) {
+Store.prototype.featureChanged = function(featureId) {
   this._changedFeatureIds.add(featureId);
-
-  const silent = options.silent != null ? options.silent : this.ctx.options.suppressAPIEvents;
-  if (silent !== true) {
-    const feature = this.get(featureId);
-    this.ctx.events.fire(Constants.events.CREATE, {
-      features: [feature.toGeoJSON()]
-    });
-  }
-
-  return this;
-};
-
-/**
- * Sets a feature's state to changed.
- * @param {string} featureId
- * @return {Store} this
- */
-Store.prototype.featureChanged = function(featureId, options = {}) {
-  this._changedFeatureIds.add(featureId);
-
-  const silent = options.silent != null ? options.silent : this.ctx.options.suppressAPIEvents;
-  if (silent !== true) {
-    this.ctx.events.fire(Constants.events.UPDATE, {
-      action: options.action ? options.action : Constants.updateActions.CHANGE_COORDINATES,
-      features: [this.get(featureId).toGeoJSON()]
-    });
-  }
-
   return this;
 };
 
@@ -145,15 +98,13 @@ Store.prototype.getAllIds = function() {
 /**
  * Adds a feature to the store.
  * @param {Object} feature
- * @param {Object} [options]
- * @param {Object} [options.silent] - If `true`, this invocation will not fire an event.
  *
  * @return {Store} this
  */
-Store.prototype.add = function(feature, options = {}) {
+Store.prototype.add = function(feature) {
+  this.featureChanged(feature.id);
   this._features[feature.id] = feature;
   this._featureIds.add(feature.id);
-  this.featureCreated(feature.id, {silent: options.silent});
   return this;
 };
 
@@ -168,24 +119,18 @@ Store.prototype.add = function(feature, options = {}) {
  * @return {Store} this
  */
 Store.prototype.delete = function(featureIds, options = {}) {
-  const deletedFeaturesToEmit = [];
   toDenseArray(featureIds).forEach((id) => {
     if (!this._featureIds.has(id)) return;
     this._featureIds.delete(id);
     this._selectedFeatureIds.delete(id);
     if (!options.silent) {
-      if (deletedFeaturesToEmit.indexOf(this._features[id]) === -1) {
-        deletedFeaturesToEmit.push(this._features[id].toGeoJSON());
+      if (this._deletedFeaturesToEmit.indexOf(this._features[id]) === -1) {
+        this._deletedFeaturesToEmit.push(this._features[id]);
       }
     }
     delete this._features[id];
     this.isDirty = true;
   });
-
-  if (deletedFeaturesToEmit.length) {
-    this.ctx.events.fire(Constants.events.DELETE, {features: deletedFeaturesToEmit});
-  }
-
   refreshSelectedCoordinates(this, options);
   return this;
 };
@@ -311,7 +256,7 @@ Store.prototype.getSelectedIds = function() {
  * @return {Array<Object>} Selected features.
  */
 Store.prototype.getSelected = function() {
-  return this.getSelectedIds().map(id => this.get(id));
+  return this._selectedFeatureIds.values().map(id => this.get(id));
 };
 
 /**
@@ -342,19 +287,13 @@ Store.prototype.isSelected = function(featureId) {
  * @param {string} featureId
  * @param {string} property property
  * @param {string} property value
- * @param {Object} [options]
- * @param {Object} [options.silent] - If `true`, this invocation will not fire an event.
 */
-Store.prototype.setFeatureProperty = function(featureId, property, value, options = {}) {
+Store.prototype.setFeatureProperty = function(featureId, property, value) {
   this.get(featureId).setProperty(property, value);
-
-  this.featureChanged(featureId, {
-    silent: options.silent,
-    action: Constants.updateActions.CHANGE_PROPERTIES
-  });
+  this.featureChanged(featureId);
 };
 
-function refreshSelectedCoordinates(store, options = {}) {
+function refreshSelectedCoordinates(store, options) {
   const newSelectedCoordinates = store._selectedCoordinates.filter(point => store._selectedFeatureIds.has(point.feature_id));
   if (store._selectedCoordinates.length !== newSelectedCoordinates.length && !options.silent) {
     store._emitSelectionChange = true;
@@ -366,7 +305,7 @@ function refreshSelectedCoordinates(store, options = {}) {
  * Stores the initial config for a map, so that we can set it again after we're done.
 */
 Store.prototype.storeMapConfig = function() {
-  Constants.interactions.forEach((interaction) => {
+  interactions.forEach((interaction) => {
     const interactionSet = this.ctx.map[interaction];
     if (interactionSet) {
       this._mapInitialConfig[interaction] = this.ctx.map[interaction].isEnabled();
