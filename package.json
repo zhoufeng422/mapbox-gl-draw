@@ -82,5 +82,8 @@
     "hat": "0.0.3",
     "lodash.isequal": "^4.5.0",
     "xtend": "^4.0.2"
+  },
+  "publishConfig": {
+    "registry": "http://192.168.1.245:30081/repository/yznpm/"
   }
 }
